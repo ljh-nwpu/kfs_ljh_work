@@ -1,0 +1,8 @@
+streamlit
+pandas
+openpyxl
+plotly
+streamlit-option-menu
+streamlit-modal
+# streamlit-copy-to-clipboard  # removed, replaced by inline HTML/JS implementation
+streamlit_shadcn_ui 

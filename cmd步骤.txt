@@ -1,0 +1,7 @@
+cd C:\Users\15215\Desktop\kfs_bi-master
+
+call E:\anaconda3\Scripts\activate.bat kfs_bi-master
+
+streamlit run dashboard.py
+
+streamlit run dashboard_v2.py
