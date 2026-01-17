@@ -151,6 +151,7 @@ def show_overview_page():
 
     st.markdown("---")
 
+    # ... existing code ...
     # 2. 每日趋势
     st.header("每日使用与反馈趋势")
 
@@ -170,27 +171,62 @@ def show_overview_page():
             help="选择一个时间段来分析趋势。"
         )
 
+        # 初始化 filtered_daily_df
+        filtered_daily_df = pd.DataFrame()
+        start_date = min_date
+        end_date = max_date
+
+        # 处理日期范围选择
         if len(date_range) == 2:
             start_date, end_date = date_range
             filtered_daily_df = daily_df[
                 (daily_df['date'].dt.date >= start_date) & (daily_df['date'].dt.date <= end_date)]
+        elif len(date_range) == 1:
+            # 只选择一天的情况
+            start_date = end_date = date_range[0]
+            filtered_daily_df = daily_df[daily_df['date'].dt.date == start_date]
 
+        if not filtered_daily_df.empty:
             col1, col2 = st.columns(2)
 
             with col1:
-                filtered_daily_df = filtered_daily_df.rename(columns={
+                # 重命名列用于显示
+                display_columns = {
                     'usage_count': '提问数',
                     'feedback_count': '反馈数',
                     'good': '好评数',
                     'bad': '错误数',
                     'improve': '待改进数'
-                })
-                fig_daily = px.line(
-                    filtered_daily_df, x='date', y=['提问数', '反馈数', '好评数', '错误数', '待改进数'],
-                    labels={'value': '数量', 'date': '日期', 'variable': '指标'},
-                    template="plotly_white"
+                }
+
+                # 创建图表 - 如果只有一天数据，使用散点图显示点
+                if len(filtered_daily_df) == 1:
+                    # 单日数据，使用散点图显示点
+                    fig_daily = px.scatter(
+                        filtered_daily_df, x='date', y=['usage_count', 'feedback_count', 'good', 'bad', 'improve'],
+                        labels={'value': '数量', 'date': '日期', 'variable': '指标'},
+                        template="plotly_white"
+                    )
+                    fig_daily.update_traces(marker=dict(size=10))
+                else:
+                    # 多日数据，使用折线图
+                    fig_daily = px.line(
+                        filtered_daily_df, x='date', y=['usage_count', 'feedback_count', 'good', 'bad', 'improve'],
+                        labels={'value': '数量', 'date': '日期', 'variable': '指标'},
+                        template="plotly_white"
+                    )
+
+                fig_daily.update_layout(
+                    legend_title_text='',
+                    title_text="每日提问和反馈数量",
+                    title_x=0.5,
+                    xaxis_title="日期",
+                    yaxis_title="数量"
                 )
-                fig_daily.update_layout(legend_title_text='', title_text="每日提问和反馈数量", title_x=0.5)
+                # 更新图例标签
+                for i, trace in enumerate(fig_daily.data):
+                    if i < len(display_columns):
+                        trace.name = list(display_columns.values())[i]
                 st.plotly_chart(fig_daily, use_container_width=True)
 
             with col2:
@@ -206,19 +242,38 @@ def show_overview_page():
                 available_cols = [col for col in rate_cols if col in filtered_daily_df.columns]
 
                 if available_cols:
-                    df_melted = filtered_daily_df.melt(
-                        id_vars=['date'],
-                        value_vars=available_cols,
-                        var_name='指标',
-                        value_name='比率'
-                    )
-                    df_melted['指标'] = df_melted['指标'].map(legend_rename_map)
+                    if len(filtered_daily_df) == 1:
+                        # 单日数据，使用散点图显示点
+                        df_melted = filtered_daily_df.melt(
+                            id_vars=['date'],
+                            value_vars=available_cols,
+                            var_name='指标',
+                            value_name='比率'
+                        )
+                        df_melted['指标'] = df_melted['指标'].map(legend_rename_map)
 
-                    fig_rates = px.line(
-                        df_melted, x='date', y='比率', color='指标',
-                        labels={'比率': '比率', 'date': '日期'},
-                        template="plotly_white"
-                    )
+                        fig_rates = px.scatter(
+                            df_melted, x='date', y='比率', color='指标',
+                            labels={'比率': '比率', 'date': '日期'},
+                            template="plotly_white"
+                        )
+                        fig_rates.update_traces(marker=dict(size=10))
+                    else:
+                        # 多日数据，使用折线图
+                        df_melted = filtered_daily_df.melt(
+                            id_vars=['date'],
+                            value_vars=available_cols,
+                            var_name='指标',
+                            value_name='比率'
+                        )
+                        df_melted['指标'] = df_melted['指标'].map(legend_rename_map)
+
+                        fig_rates = px.line(
+                            df_melted, x='date', y='比率', color='指标',
+                            labels={'比率': '比率', 'date': '日期'},
+                            template="plotly_white"
+                        )
+
                     fig_rates.update_layout(
                         legend_title_text='',
                         title_text="每日反馈比率趋势",
@@ -244,104 +299,146 @@ def show_overview_page():
                 (daily_text_df['created_at'].dt.date <= end_date)
                 ]
 
-            # 修复：为所有日期和用户组合填充缺失数据，确保字符量为0的天数也显示
-            # 生成完整的日期范围
-            all_dates = pd.date_range(start=start_date, end=end_date, freq='D')
-            all_users = filtered_daily_text_df['user_name'].unique()
+            if not filtered_daily_text_df.empty:
+                # 修复：为所有日期和用户组合填充缺失数据，确保字符量为0的天数也显示
+                # 生成完整的日期范围
+                all_dates = pd.date_range(start=start_date, end=end_date, freq='D')
+                all_users = filtered_daily_text_df['user_name'].unique()
 
-            # 创建完整的日期-用户组合
-            full_combinations = pd.MultiIndex.from_product(
-                [all_dates, all_users],
-                names=['created_at', 'user_name']
-            ).to_frame(index=False)
+                # 创建完整的日期-用户组合
+                full_combinations = pd.MultiIndex.from_product(
+                    [all_dates, all_users],
+                    names=['created_at', 'user_name']
+                ).to_frame(index=False)
 
-            # 合并现有数据，填充缺失值为0
-            daily_text_df_full = pd.merge(
-                full_combinations,
-                filtered_daily_text_df,
-                on=['created_at', 'user_name'],
-                how='left'
-            ).fillna(0)
+                # 合并现有数据，填充缺失值为0
+                daily_text_df_full = pd.merge(
+                    full_combinations,
+                    filtered_daily_text_df,
+                    on=['created_at', 'user_name'],
+                    how='left'
+                ).fillna(0)
 
-            # 创建颜色映射，确保同一用户颜色一致
-            unique_users = daily_text_df_full['user_name'].unique()
-            colors = px.colors.qualitative.Set1 + px.colors.qualitative.Set2 + px.colors.qualitative.Set3
-            color_map = {user: colors[i % len(colors)] for i, user in enumerate(unique_users)}
+                # 创建颜色映射，确保同一用户颜色一致
+                unique_users = daily_text_df_full['user_name'].unique()
+                colors = px.colors.qualitative.Set1 + px.colors.qualitative.Set2 + px.colors.qualitative.Set3
+                color_map = {user: colors[i % len(colors)] for i, user in enumerate(unique_users)}
 
-            col1, col2 = st.columns(2)
+                col1, col2 = st.columns(2)
 
-            with col1:
-                # 每日用户输入文字量趋势 - 使用正确的文字量数据
-                fig_daily_user_text = px.line(
-                    daily_text_df_full,
-                    x='created_at',
-                    y='user_text_length',
-                    color='user_name',
-                    labels={'user_text_length': '用户输入文字量（字符）', 'created_at': '日期', 'user_name': '用户'},
-                    template="plotly_white",
-                    color_discrete_map=color_map
-                )
-                fig_daily_user_text.update_layout(
-                    legend_title_text='',
-                    title_text="每日用户输入文字量趋势",
-                    title_x=0.5
-                )
-                st.plotly_chart(fig_daily_user_text, use_container_width=True)
+                with col1:
+                    # 每日用户输入文字量趋势 - 使用正确的文字量数据
+                    if len(daily_text_df_full['created_at'].unique()) == 1:
+                        # 单日数据，使用散点图
+                        fig_daily_user_text = px.scatter(
+                            daily_text_df_full,
+                            x='created_at',
+                            y='user_text_length',
+                            color='user_name',
+                            labels={'user_text_length': '用户输入文字量（字符）', 'created_at': '日期',
+                                    'user_name': '用户'},
+                            template="plotly_white",
+                            color_discrete_map=color_map
+                        )
+                        fig_daily_user_text.update_traces(marker=dict(size=10))
+                    else:
+                        # 多日数据，使用折线图
+                        fig_daily_user_text = px.line(
+                            daily_text_df_full,
+                            x='created_at',
+                            y='user_text_length',
+                            color='user_name',
+                            labels={'user_text_length': '用户输入文字量（字符）', 'created_at': '日期',
+                                    'user_name': '用户'},
+                            template="plotly_white",
+                            color_discrete_map=color_map
+                        )
+                    fig_daily_user_text.update_layout(
+                        legend_title_text='',
+                        title_text="每日用户输入文字量趋势",
+                        title_x=0.5
+                    )
+                    st.plotly_chart(fig_daily_user_text, use_container_width=True)
 
-            with col2:
-                # 每日AI输出文字量趋势 - 使用正确的文字量数据
-                fig_daily_ai_text = px.line(
-                    daily_text_df_full,
-                    x='created_at',
-                    y='ai_text_length',
-                    color='user_name',
-                    labels={'ai_text_length': 'AI输出文字量（字符）', 'created_at': '日期', 'user_name': '用户'},
-                    template="plotly_white",
-                    color_discrete_map=color_map
-                )
-                fig_daily_ai_text.update_layout(
-                    legend_title_text='',
-                    title_text="每日AI输出文字量趋势",
-                    title_x=0.5
-                )
-                st.plotly_chart(fig_daily_ai_text, use_container_width=True)
+                    with col2:
+                        # 每日AI输出文字量趋势 - 使用正确的文字量数据
+                        if len(daily_text_df_full['created_at'].unique()) == 1:
+                            # 单日数据，使用散点图
+                            fig_daily_ai_text = px.scatter(
+                                daily_text_df_full,
+                                x='created_at',
+                                y='ai_text_length',
+                                color='user_name',
+                                labels={'ai_text_length': 'AI输出文字量（字符）', 'created_at': '日期',
+                                        'user_name': '用户'},
+                                template="plotly_white",
+                                color_discrete_map=color_map
+                            )
+                            fig_daily_ai_text.update_traces(marker=dict(size=10))
+                        else:
+                            # 多日数据，使用折线图
+                            fig_daily_ai_text = px.line(
+                                daily_text_df_full,
+                                x='created_at',
+                                y='ai_text_length',
+                                color='user_name',
+                                labels={'ai_text_length': 'AI输出文字量（字符）', 'created_at': '日期',
+                                        'user_name': '用户'},
+                                template="plotly_white",
+                                color_discrete_map=color_map
+                            )
+                        fig_daily_ai_text.update_layout(
+                            legend_title_text='',
+                            title_text="每日AI输出文字量趋势",
+                            title_x=0.5
+                        )
+                        st.plotly_chart(fig_daily_ai_text, use_container_width=True)
 
-        with st.expander("查看每日趋势明细数据"):
-                display_df = filtered_daily_df.copy()
-                rate_cols = ['feedback_ratio', 'excellent_rate', 'error_rate', 'to_be_improved_rate']
-                format_dict = {
-                    'usage_count': '{:,}',
-                    'feedback_count': '{:,}',
-                    'good': '{:,}',
-                    'bad': '{:,}',
-                    'improve': '{:,}'
-                }
-                for col in rate_cols:
-                    if col in display_df.columns:
-                        format_dict[col] = '{:.2%}'
-                display_df = display_df.rename(columns={
-                    'usage_count': '提问数',
-                    'feedback_count': '反馈数',
-                    'good': '好评数',
-                    'bad': '错误数',
-                    'feedback_ratio': '反馈率',
-                    'improve': '待改进数',
-                    'excellent_rate': '好评率',
-                    'error_rate': '错误率',
-                    'improve_rate': '待改进率'
-                })
-                st.dataframe(display_df.style.format(format_dict))
-                csv_daily = convert_df_to_csv(filtered_daily_df)
-                st.download_button(
-                    label="下载每日趋势数据 (CSV)",
-                    data=csv_daily,
-                    file_name=f'daily_trend_{start_date}_to_{end_date}.csv',
-                    mime='text/csv',
-                )
-    else:
-        st.warning("没有可供分析的每日数据。")
+                    # 查看每日趋势明细数据 - 完全移出两列布局，显示在最左边并完全展开
+                with st.expander("查看每日趋势明细数据"):
+                    display_df = filtered_daily_df.copy()
+                    rate_cols = ['feedback_ratio', 'excellent_rate', 'error_rate', 'to_be_improved_rate']
+                    format_dict = {
+                        'usage_count': '{:,}',
+                        'feedback_count': '{:,}',
+                        'good': '{:,}',
+                        'bad': '{:,}',
+                        'improve': '{:,}',
+                        'user_text_length': '{:,}',
+                        'ai_text_length': '{:,}'
+                    }
+                    for col in rate_cols:
+                        if col in display_df.columns:
+                            format_dict[col] = '{:.2%}'
+                    display_df = display_df.rename(columns={
+                        'usage_count': '提问数',
+                        'feedback_count': '反馈数',
+                        'good': '好评数',
+                        'bad': '错误数',
+                        'feedback_ratio': '反馈率',
+                        'improve': '待改进数',
+                        'excellent_rate': '好评率',
+                        'error_rate': '错误率',
+                        'improve_rate': '待改进率',
+                        'user_text_length': '用户输入文字量',
+                        'ai_text_length': 'AI输出文字量'
+                    })
+                    # 设置表格高度，确保完全展开显示所有行
+                    st.dataframe(display_df.style.format(format_dict), height=min(600, 100 + len(display_df) * 35))
+                    csv_daily = convert_df_to_csv(filtered_daily_df)
+                    st.download_button(
+                        label="下载每日趋势数据 (CSV)",
+                        data=csv_daily,
+                        file_name=f'daily_trend_{start_date}_to_{end_date}.csv',
+                        mime='text/csv',
+                    )
 
+            else:
+                st.warning("在选定时间范围内没有可供分析的每日数据。")
+        else:
+                st.warning("没有可供分析的每日数据。")
     st.markdown("---")
+    # ... existing code ...
 
     # 3. 模型使用情况分析
     st.header("模型使用情况分析")
@@ -417,6 +514,7 @@ def show_overview_page():
 
             col1, col2 = st.columns([3, 2])
 
+            # ... existing code ...
             with col1:
                 if not df_to_plot_model.empty:
                     fig_model = px.bar(
@@ -428,6 +526,12 @@ def show_overview_page():
                         template="plotly_white",
                         text_auto=True
                     )
+                    # 修改图例标签
+                    for trace in fig_model.data:
+                        if trace.name == 'usage_count':
+                            trace.name = '提问次数'
+                        elif trace.name == 'feedback_count':
+                            trace.name = '反馈次数'
                     fig_model.update_layout(legend_title_text='', xaxis_title=None, title_text="各模型提问量 vs 反馈量",
                                             title_x=0.5)
                     fig_model.update_traces(textposition='outside')
@@ -438,8 +542,13 @@ def show_overview_page():
             with col2:
                 if not df_to_plot_model.empty:
                     st.markdown("##### 数据明细")
+                    # 修改表格列名
+                    display_model_df = df_to_plot_model.rename(columns={
+                        'usage_count': '提问次数',
+                        'feedback_count': '反馈次数'
+                    })
                     st.dataframe(
-                        df_to_plot_model.style.format({'usage_count': '{:,}', 'feedback_count': '{:,}'}),
+                        display_model_df.style.format({'提问次数': '{:,}', '反馈次数': '{:,}'}),
                         use_container_width=True
                     )
                     csv_model = convert_df_to_csv(df_to_plot_model)
@@ -452,6 +561,7 @@ def show_overview_page():
                     )
                 else:
                     st.info("没有可下载的数据。")
+        # ... existing code ...
     else:
         st.info("没有模型统计数据。")
 
@@ -520,6 +630,7 @@ def show_overview_page():
                 # 将两个图表放在同一行
                 col_chart1, col_chart2 = st.columns(2)
 
+                # ... existing code ...
                 with col_chart1:
                     # 原有的用户提问量vs反馈量图表
                     fig_user = px.bar(
@@ -529,6 +640,12 @@ def show_overview_page():
                         template="plotly_white",
                         height=max(400, len(df_to_plot) * 40), text_auto=True
                     )
+                    # 修改图例标签
+                    for trace in fig_user.data:
+                        if trace.name == 'usage_count':
+                            trace.name = '提问次数'
+                        elif trace.name == 'feedback_count':
+                            trace.name = '反馈次数'
                     fig_user.update_layout(legend_title_text='', yaxis_title=None, title_text=title_text, title_x=0.5)
                     fig_user.update_traces(textposition='outside')
                     st.plotly_chart(fig_user, use_container_width=True)
@@ -559,15 +676,21 @@ def show_overview_page():
 
                 with st.expander("查看用户统计明细数据"):
                     display_df = df_to_plot.sort_values('usage_count', ascending=False)
-                    # 添加文字量统计到显示
+                    # 修改表格列名
+                    display_df = display_df.rename(columns={
+                        'usage_count': '提问次数',
+                        'feedback_count': '反馈次数',
+                        'user_text_length': '用户输入文字量',
+                        'ai_text_length': 'AI输出文字量'
+                    })
                     st.dataframe(display_df.style.format({
-                        'usage_count': '{:,}',
-                        'feedback_count': '{:,}',
-                        'user_text_length': '{:,}',
-                        'ai_text_length': '{:,}'
+                        '提问次数': '{:,}',
+                        '反馈次数': '{:,}',
+                        '用户输入文字量': '{:,}',
+                        'AI输出文字量': '{:,}'
                     }))
 
-                    csv_user = convert_df_to_csv(display_df)
+                    csv_user = convert_df_to_csv(df_to_plot)
                     time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
                     st.download_button(
                         label="下载用户使用数据(CSV)",
@@ -575,6 +698,7 @@ def show_overview_page():
                         file_name=f'user_use_data_{time_str}.csv',
                         mime='text/csv',
                     )
+            # ... existing code ...
             else:
                 st.info("在选定时间范围内没有用户数据。")
     else:
